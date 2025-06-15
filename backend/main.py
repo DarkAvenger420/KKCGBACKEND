@@ -13,6 +13,7 @@ import os
 from dotenv import load_dotenv
 import jwt
 import hashlib
+from passlib.context import CryptContext
 
 # Load environment variables
 load_dotenv()
@@ -192,12 +193,15 @@ def get_db():
     finally:
         db.close()
 
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 # Utility functions
 def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+    return pwd_context.hash(password)
 
 def verify_password(password: str, hashed_password: str) -> bool:
-    return hash_password(password) == hashed_password
+    return pwd_context.verify(password, hashed_password)
 
 def create_access_token(data: dict):
     to_encode = data.copy()
@@ -210,7 +214,13 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
         return payload
-    except jwt.PyJWTError:
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
